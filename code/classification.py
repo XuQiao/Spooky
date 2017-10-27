@@ -38,12 +38,13 @@ from sklearn import metrics
 from sklearn.model_selection import train_test_split
 
 #---------------
-use_hashing = False
+use_hashing = True
 select_chi2 = True
 n_features = 2 ** 16
 print_top10 = False
 print_report = True
 print_cm = True
+n_gram = 2
 
 ###########################################
 # read in data
@@ -63,16 +64,23 @@ print(y_test.shape)
 
 
 # extract features
-print("Extracting features from the training data using a sparse vectorizer")
+print("Extracting features from the training data using a n-gram or sparse vectorizer")
 t0 = time()
-if use_hashing:
-    vectorizer = HashingVectorizer(stop_words='english', alternate_sign=False,
-                                   n_features=n_features)
-    X_train = vectorizer.transform(X_train)
-else:
-    vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5,
-                                 stop_words='english')
+
+# n gram
+if n_gram > 1:
+    vectorizer = CountVectorizer(ngram_range=(1,n_gram), token_pattern = r'\b\w+\b', min_df = 1)
     X_train = vectorizer.fit_transform(X_train)
+
+else:
+    if use_hashing :
+        vectorizer = HashingVectorizer(stop_words='english', alternate_sign=False,
+                                       n_features=n_features)
+        X_train = vectorizer.transform(X_train)
+    else:
+        vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5,
+                                     stop_words='english')
+        X_train = vectorizer.fit_transform(X_train)
 
 duration = time() - t0
 print("done in %fs" % (duration))
@@ -136,7 +144,7 @@ def benchmark(clf):
     try:
         pred_prob = clf.predict_proba(X_test)
     except AttributeError:
-        pred_prob = pred
+        pred_prob = LabelBinarizer().fit_transform(pred.tolist())
 
     test_time = time() - t0
     print("test time:  %0.3fs" % test_time)
@@ -144,9 +152,7 @@ def benchmark(clf):
     score = metrics.accuracy_score(y_test, pred)
     print("accuracy:   %0.3f" % score)
 
-    #pred_prob = LabelBinarizer().fit_transform(pred_prob)
     y_test_prob = LabelBinarizer().fit_transform(y_test)
-    print(y_test_prob,pred_prob)
     log_loss = metrics.log_loss(y_test_prob, pred_prob)
     print("log_loss:   %0.3f" % log_loss)
 
@@ -185,7 +191,7 @@ for clf, name in (
         (Perceptron(tol=1e-2,max_iter=500), "Perceptron"),
         (PassiveAggressiveClassifier(tol=1e-2,max_iter=500), "Passive-Aggressive"),
         (KNeighborsClassifier(n_neighbors=10), "kNN"),
-        (RandomForestClassifier(n_estimators=100), "Random forest")):
+        (RandomForestClassifier(n_estimators=50), "Random forest")):
     print('=' * 80)
     print(name)
     results.append(benchmark(clf))
@@ -231,19 +237,20 @@ results.append(benchmark(Pipeline([
 
 indices = np.arange(len(results))
 
-results = [[x[i] for x in results] for i in range(4)]
+results = [[x[i] for x in results] for i in range(5)]
 
-clf_names, score, training_time, test_time = results
+clf_names, score, training_time, test_time, log_loss = results
 training_time = np.array(training_time) / np.max(training_time)
 test_time = np.array(test_time) / np.max(test_time)
+log_loss = np.array(log_loss) / np.max(log_loss)
 
 plt.figure(figsize=(12, 8))
 plt.title("Score")
 plt.barh(indices, score, .2, label="score", color='navy')
 plt.barh(indices + .3, training_time, .2, label="training time",
          color='c')
-plt.barh(indices + .6, test_time, .2, label="test time", color='darkorange')
-plt.barh(indices + .9, log_loss, .2, label="log_loss", color='blue')
+#plt.barh(indices + .6, test_time, .2, label="test time", color='darkorange')
+plt.barh(indices + .6, log_loss, .2, label="log_loss", color='blue')
 plt.yticks(())
 plt.legend(loc='best')
 plt.subplots_adjust(left=.25)
@@ -251,7 +258,7 @@ plt.subplots_adjust(top=.95)
 plt.subplots_adjust(bottom=.05)
 
 for i, c in zip(indices, clf_names):
-    plt.text(-.3, i, c)
+    plt.text(-.4, i, c)
 
 plt.show()
 
