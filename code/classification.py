@@ -38,7 +38,7 @@ from sklearn import metrics
 from sklearn.model_selection import train_test_split
 
 #---------------
-use_hashing = False
+use_hashing = True
 select_chi2 = 1000
 n_features = 2 ** 16
 print_top10 = False
@@ -106,6 +106,7 @@ if select_chi2:
           select_chi2)
     t0 = time()
     ch2 = SelectKBest(chi2, k=select_chi2)
+    print(X_train, y_train)
     X_train = ch2.fit_transform(X_train,y_train)
     X_test = ch2.transform(X_test)
     if feature_names:
@@ -255,7 +256,7 @@ plt.barh(indices, score, .2, label="score", color='navy')
 plt.barh(indices + .3, training_time, .2, label="training time",
          color='c')
 #plt.barh(indices + .6, test_time, .2, label="test time", color='darkorange')
-plt.barh(indices + .6, log_loss*10, .2, label="log_loss * 10", color='blue')
+plt.barh(indices + .6, log_loss, .2, label="log_loss", color='blue')
 plt.yticks(())
 plt.legend(loc='best')
 plt.subplots_adjust(left=.25)

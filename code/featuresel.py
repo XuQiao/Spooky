@@ -18,7 +18,7 @@ from sklearn.preprocessing import LabelBinarizer
 
 from sklearn.feature_extraction.text import CountVectorizer
 from sklearn.feature_selection import VarianceThreshold
-from sklearn.model_selection import GridSearchCV, train_test_split
+from sklearn.model_selection import RandomizedSearchCV, GridSearchCV, train_test_split
 
 from sklearn.linear_model import Perceptron
 from sklearn.linear_model import LogisticRegression
@@ -65,9 +65,12 @@ X_train, X_test, y_train, y_test = train_test_split(trainall_df.text, trainall_d
 target_names = ['EAP','HPL','MWS']
 
 t0 = time()
+y_train = LabelBinarizer().fit_transform(y_train)
+print(y_train)
 
 clf = Pipeline([
-      ('text', CountVectorizer()),
+      #('text', CountVectorizer()),
+      ('text',TfidfVectorizer(sublinear_tf=True, max_df=0.5)),
       #('feature_selection', SelectFromModel(LinearSVC(penalty="l1"))),
       ('feature_selection', SelectKBest(f_regression, k=1000)),
       #('reduce_dims',PCA()),
