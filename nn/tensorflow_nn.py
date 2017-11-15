@@ -2,36 +2,52 @@
 import pandas as pd
 import math
 import numpy as np
-import h5py
 import sklearn.metrics
 import matplotlib.pyplot as plt
 import tensorflow as tf
 from tensorflow.python.framework import ops
 from tf_utils import load_dataset, random_mini_batches, convert_to_one_hot, predict
 
+from sklearn.pipeline import Pipeline, FeatureUnion
 from sklearn.preprocessing import LabelEncoder, LabelBinarizer
 from sklearn.feature_extraction.text import TfidfVectorizer, CountVectorizer, HashingVectorizer
+from sklearn.decomposition import PCA, TruncatedSVD
 from sklearn.feature_selection import SelectKBest, chi2
 from sklearn.model_selection import train_test_split
 
+import gensim
+
 #np.random.seed(1)
+n_gram = 2
 
 ###########################################
 # read in data
 trainall_df = pd.read_csv("../input/train.csv")
+testall_df = pd.read_csv("../input/test.csv")
 
+X_sub = testall_df.text
 # split a training set and a test set
 X_train, X_test, y_train, y_test = train_test_split(trainall_df.text, trainall_df.author, test_size = 0.2, random_state = 1)
 # y_train = LabelBinarizer().fit_transform(y_train)
 # y_test = LabelBinarizer().fit_transform(y_test)
 
+
 #vectorizer = CountVectorizer()
 vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5,stop_words='english')
+#vectorizer = CountVectorizer(ngram_range=(2,n_gram), token_pattern = r'\b\w+\b', min_df = 1)
+pca = PCA(n_components=200)
+lca = TruncatedSVD(n_components=200, n_iter=7, random_state=42)
+ch2 = SelectKBest(chi2, k=1000)
+
+vectorizer = CountVectorizer()
+#vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5,stop_words='english')
 X_train = vectorizer.fit_transform(X_train)
 X_test = vectorizer.transform(X_test)
-ch2 = SelectKBest(chi2, k=500)
+X_sub = vectorizer.transform(X_sub)
+
 X_train = ch2.fit_transform(X_train,y_train).toarray()
 X_test = ch2.transform(X_test).toarray()
+X_sub = ch2.transform(X_sub).toarray()
 
 # Convert training and test labels to one hot matrices
 #X_train = LabelBinarizer().fit_transform(X_train)
@@ -45,6 +61,7 @@ X_train = X_train.transpose()
 y_train = y_train.transpose()
 X_test = X_test.transpose()
 y_test = y_test.transpose()
+X_sub = X_sub.transpose()
 
 print ("number of training examples = " + str(X_train.shape[1]))
 print ("number of test examples = " + str(X_test.shape[1]))
@@ -52,6 +69,7 @@ print ("X_train shape: " + str(X_train.shape))
 print ("y_train shape: " + str(y_train.shape))
 print ("X_test shape: " + str(X_test.shape))
 print ("y_test shape: " + str(y_test.shape))
+print ("X_sub shape: " + str(X_sub.shape))
 
 def create_placeholders(n_x, n_y):
 
@@ -80,7 +98,7 @@ def forward_propagation(X, parameters):
         A = tf.nn.relu(tf.add(tf.matmul(parameters['W' + str(l)], A_prev), parameters['b' + str(l)]))
 
     ZL = tf.add(tf.matmul(parameters['W' + str(L)], A), parameters['b' + str(L)])
-
+ 
     return ZL
 
 def compute_cost(ZL, Y):
@@ -94,7 +112,7 @@ def compute_cost(ZL, Y):
     return cost
 
 
-def model(X_train, y_train, X_test, y_test, learning_rate = 0.0001,
+def model(X_train, y_train, X_test, y_test, X_sub, learning_rate = 0.0001,
           num_epochs = 1500, minibatch_size = 64, print_cost = True):
 
     ops.reset_default_graph()                         # to be able to rerun the model without overwriting tf variables
@@ -104,7 +122,7 @@ def model(X_train, y_train, X_test, y_test, learning_rate = 0.0001,
     (n_x, m) = X_train.shape                          # (n_x: input size, m : number of examples in the train set)
     n_y = y_train.shape[0]                            # n_y : output size
     costs = []                                        # To keep track of the cost
-    layers_dims = [n_x, 15, 10, 10, n_y]
+    layers_dims = [n_x, 20, 10, 6, n_y]
 
     # Create Placeholders of shape (n_x, n_y)
     X, Y =  create_placeholders(n_x, n_y)
@@ -149,17 +167,17 @@ def model(X_train, y_train, X_test, y_test, learning_rate = 0.0001,
                 epoch_cost += minibatch_cost / num_minibatches
 
             # Print the cost every epoch
-            if print_cost == True and epoch % 1000 == 0:
-                print ("Cost after epoch %i: %f" % (epoch, epoch_cost))
             if print_cost == True and epoch % 10 == 0:
+                print ("Cost after epoch %i: %f" % (epoch, epoch_cost))
+            if print_cost == True and epoch % 1 == 0:
                 costs.append(epoch_cost)
 
         # plot the cost
-        plt.plot(np.squeeze(costs))
-        plt.ylabel('cost')
-        plt.xlabel('iterations (per tens)')
-        plt.title("Learning rate =" + str(learning_rate))
-        plt.show()
+        #plt.plot(np.squeeze(costs))
+        #plt.ylabel('cost')
+        #plt.xlabel('iterations (per tens)')
+        #plt.title("Learning rate =" + str(learning_rate))
+        #plt.show()
 
         # lets save the parameters in a variable
         parameters = sess.run(parameters)
@@ -173,6 +191,10 @@ def model(X_train, y_train, X_test, y_test, learning_rate = 0.0001,
         accuracy = tf.reduce_mean(tf.cast(correct_prediction, "float"))
         print ("Train Accuracy:", accuracy.eval({X: X_train, Y: y_train}))
         print ("Test Accuracy:", accuracy.eval({X: X_test, Y: y_test}))
+
+        # submission prob
+        proba = tf.nn.softmax(tf.transpose(ZL))
+        sub = proba.eval({X: X_sub})
 
         y_p = tf.argmax(ZL, axis = 0)
 
@@ -206,19 +228,20 @@ def model(X_train, y_train, X_test, y_test, learning_rate = 0.0001,
         print ("log_loss", log_loss.eval({X: X_test, Y: y_test}))
 #        fpr, tpr, tresholds = sklearn.metrics.roc_curve(y_true, y_pred)
 
-#        predicted = y_pred
-#        actual = y_true
-#        TP = tf.count_nonzero(predicted * actual)
-#        TN = tf.count_nonzero((predicted - 1) * (actual - 1))
-#        FP = tf.count_nonzero(predicted * (actual - 1))
-#        FN = tf.count_nonzero((predicted - 1) * actual)
-#        precision = TP / (TP + FP)
-#        recall = TP / (TP + FN)
-#        f1 = 2 * precision * recall / (precision + recall)
+        predicted = y_pred
+        actual = y_true
+        TP = tf.count_nonzero(predicted * actual).eval()
+        TN = tf.count_nonzero((predicted - 1) * (actual - 1)).eval()
+        FP = tf.count_nonzero(predicted * (actual - 1)).eval()
+        FN = tf.count_nonzero((predicted - 1) * actual).eval()
+        precision = TP / (TP + FP)
+        recall = TP / (TP + FN)
+        f1 = 2 * precision * recall / (precision + recall)
+        print('Precision:', precision, 'recall:', recall, 'f1:', f1)
 
-        return parameters, costs
+        return sub, parameters, costs
 
-parameters, costs = model(X_train, y_train, X_test, y_test, learning_rate = 1e-4, num_epochs = 100, minibatch_size = 16, print_cost = True)
+sub, parameters, costs = model(X_train, y_train, X_test, y_test, X_sub, learning_rate = 1e-5, num_epochs = 1000, minibatch_size = 32, print_cost = True)
 
 # random grid search
 #costs_grid = []
@@ -251,4 +274,7 @@ parameters, costs = model(X_train, y_train, X_test, y_test, learning_rate = 1e-4
 #print("Your algorithm predicts: y = " + str(np.squeeze(my_image_prediction)))
 
 
+predictions = pd.DataFrame(sub, columns=['EAP','HPL','MWS'])
+predictions['id'] = testall_df['id']
+predictions.to_csv("submission.csv", index=False, columns=['id','EAP','HPL','MWS'])
 
