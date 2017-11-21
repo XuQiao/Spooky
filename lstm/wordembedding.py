@@ -22,7 +22,7 @@ from featureEng import *
 numpy.random.seed(7)
 
 # load the dataset but only keep the top n words, zero the rest
-top_words = 5000
+top_words = 1500
 n_gram = 2
 vectorizer = CountVectorizer()
 #vectorizer = TfidfVectorizer(sublinear_tf=True, max_df=0.5,stop_words='english')
@@ -36,16 +36,16 @@ test_df = pd.read_csv("../input/test.csv")
 train_id = train_df['id'].values
 test_id = test_df['id'].values
 #train_df, test_df = featureEng(train_df, test_df)
-train_df = pd.read_csv("./train_df.csv")
-test_df = pd.read_csv("./test_df.csv")
+#train_df = pd.read_csv("./train_df.csv")
+#test_df = pd.read_csv("./test_df.csv")
 
-cols_to_drop =['id', 'text']
-train_text = train_df.drop(cols_to_drop+['author'], axis=1).as_matrix()
-train_text = np.expand_dims(train_text, axis=2)
-test_text = test_df.drop(cols_to_drop, axis=1).as_matrix()
-test_text = np.expand_dims(test_text, axis=2)
-#rrain_text = train_df['text']
-#test_text = test_df['text']
+#cols_to_drop =['id', 'text']
+#train_text = train_df.drop(cols_to_drop+['author'], axis=1).as_matrix()
+#train_text = np.expand_dims(train_text, axis=2)
+#test_text = test_df.drop(cols_to_drop, axis=1).as_matrix()
+#test_text = np.expand_dims(test_text, axis=2)
+train_text = train_df['text']
+test_text = test_df['text']
 
 pca = PCA(n_components=200)
 lca = TruncatedSVD(n_components=800, n_iter=2, random_state=42)
@@ -64,7 +64,7 @@ X_train, X_test, y_train, y_test = train_test_split(train_text, train_author, te
 
 #X_train = vectorizer.fit_transform(X_train)
 #X_test = vectorizer.transform(X_test)
-#X_sub = vectorizer.transform(X_sub)
+#X_sub = vectorizer.transform(test_text)
 # y_train = LabelBinarizer().fit_transform(y_train)
 # y_test = LabelBinarizer().fit_transform(y_test)
 
@@ -72,42 +72,42 @@ X_train, X_test, y_train, y_test = train_test_split(train_text, train_author, te
 #X_test = ch2.transform(X_test).toarray()
 #X_sub = ch2/transform(X_sub).toarray()
 
-#tokenizer = Tokenizer(num_words=top_words)
-#tokenizer.fit_on_texts(X_train)
-#X_train = tokenizer.texts_to_sequences(X_train)
-#X_test = tokenizer.texts_to_sequences(X_test)
-#X#_sub = tokenizer.texts_to_sequences(test_text)
+tokenizer = Tokenizer(num_words=top_words)
+tokenizer.fit_on_texts(train_text)
+X_train = tokenizer.texts_to_sequences(X_train)
+X_test = tokenizer.texts_to_sequences(X_test)
+X_sub = tokenizer.texts_to_sequences(test_text)
 
 # truncate and pad input sequences
-max_review_length = 50
-#X_train = sequence.pad_sequences(X_train, maxlen=max_review_length)
-#X_test = sequence.pad_sequences(X_test, maxlen=max_review_length)
-#X_sub = sequence.pad_sequences(X_sub, maxlen=max_review_length)
-X_sub = test_text
+max_review_length = 70
+X_train = sequence.pad_sequences(X_train, maxlen=max_review_length)
+X_test = sequence.pad_sequences(X_test, maxlen=max_review_length)
+X_sub = sequence.pad_sequences(X_sub, maxlen=max_review_length)
+#X_sub = test_text
 #We can now define, compile and fit our LSTM model.
 #print(X_train[:4][:2],X_train.shape,X_test[:4][:2],y_train[:4][:2],y_test[:4][:2])
 
 # create the model
 embedding_vecor_length = 32
 model = Sequential()
-#model.add(Embedding(top_words, output_dim=embedding_vecor_length))
-model.add(Conv1D(filters=64, kernel_size=4, padding='same', activation='relu',input_shape=X_train.shape[1:]))
-model.add(AveragePooling1D(pool_size=2))
-model.add(Conv1D(filters=4, kernel_size=12, padding='same', activation='sigmoid'))
+model.add(Embedding(top_words, 100, input_length = max_review_length))
+model.add(Conv1D(filters=16, kernel_size=3, padding='same', activation='relu'))
+#model.add(MaxPooling1D(pool_size=2))
+model.add(Conv1D(filters=4, kernel_size=3, padding='same', activation='relu'))
 #model.add(Conv1D(filters=5, kernel_size=20, padding='same', activation='relu'))
-model.add(AveragePooling1D(pool_size=2))
-model.add(Dropout(0.1))
-#model.add(LSTM(50))
+#model.add(AveragePooling1D(pool_size=2))
+#model.add(LSTM(30, return_sequences=True))
 #model.add(SimpleRNN(20))
-#model.add(LSTM(200))
-model.add(Dense(100))
-model.add(Flatten())
+model.add(Dropout(0.2))
 #model.add(LSTM(50))
+model.add(Dense(20, activation = 'sigmoid'))
+model.add(Flatten())
+model.add(Dropout(0.2))
 #model.add(Dense(10, activation='sigmoid'))
 model.add(Dense(3, activation='softmax'))
 model.compile(loss='categorical_crossentropy', optimizer='adam', metrics=['accuracy'])
 print(model.summary())
-model.fit(X_train, y_train, epochs=3, batch_size=32)
+model.fit(X_train, y_train, epochs=10, batch_size=64)
 #Once fit, we estimate the performance of the model on unseen reviews.
 
 
@@ -118,10 +118,9 @@ print("Loss: %.3f, Accuracy: %.3f%%" % (scores[0], scores[1]*100))
 
 y_pred = model.predict(X_test, verbose=1)
 y_true = y_test
-#print(y_pred[:4], y_true[:4])
-log_loss = metrics.log_loss(y_true, y_pred)
 cnf_matrix = confusion_matrix(np.argmax(y_true, axis=1), np.argmax(y_pred, axis=1))
 np.set_printoptions(precision=2)
+log_loss = metrics.log_loss(y_true, y_pred)
 print("Loss: %.3f" % (log_loss))
 print(cnf_matrix)
 
@@ -134,4 +133,4 @@ print(cnf_matrix)
 sub = model.predict(X_sub, verbose = 1)
 predictions = pd.DataFrame(sub, columns=['EAP','HPL','MWS'])
 predictions['id'] = test_df['id']
-predictions.to_csv("cnn_submission.csv", index=False, columns=['id','EAP','HPL','MWS'])
+predictions.to_csv("wordemb_submission.csv", index=False, columns=['id','EAP','HPL','MWS'])
